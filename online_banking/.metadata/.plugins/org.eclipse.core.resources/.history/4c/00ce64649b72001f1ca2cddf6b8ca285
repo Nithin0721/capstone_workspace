@@ -1,0 +1,245 @@
+package com.wipro.training.bank.controller;
+
+import java.util.List;
+import java.util.Map;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RestController;
+
+import com.wipro.training.bank.dao.AccountDetailsDTO;
+import com.wipro.training.bank.dao.ForgotPasswordRequest;
+import com.wipro.training.bank.dao.LoginRequest;
+import com.wipro.training.bank.dao.RegisterRequest;
+import com.wipro.training.bank.dao.ResetPasswordRequest;
+import com.wipro.training.bank.exception.ResourceNotFoundException;
+import com.wipro.training.bank.model.Account;
+import com.wipro.training.bank.model.Payee;
+import com.wipro.training.bank.model.Transaction;
+import com.wipro.training.bank.service.AccountService;
+
+/**
+Author : Nithin T
+Date   : 13-Sept-2024
+Time   : 4:33:11 pm
+Project: smart-bank
+ */
+@RestController
+@RequestMapping("/api/account")
+public class AccountController {
+
+	private static final Logger logger = LoggerFactory.getLogger(AccountController.class);
+	private final AccountService accountService;
+
+	public AccountController(AccountService accountService) {
+		this.accountService = accountService;
+	}
+
+	/*--> POST-- http://localhost:8089/api/account/open
+	 * with JSON DATA 
+		     {
+		  "personalDetails": {
+		    "title": "Mr",
+		    "firstName": "Nithin",
+		    "middleName": "P",
+		    "lastName": "Thodeti",
+		    "fatherName": "Prabhakar",
+		    "mobile": "8096241233",
+		    "email": "nithin.t@example.com",
+		    "adhar": "2000-0809-0721",
+		    "dob": "2000-09-21"
+		  },
+		  "address": {
+		    "addressLine1": "FCI Colony",
+		    "addressLine2": "Nawabpeta",
+		    "landmark": "sai baba temple",
+		    "state": "Andhra Pradesh",
+		    "city": "Nellore",
+		    "pincode": "524002"
+		  }
+		}
+
+	 */
+	@PostMapping("/open")
+	public Account openAccount(@RequestBody Account account) {
+		logger.info("Opening account for user");
+		return accountService.openAccount(account);
+	}
+	/*
+	 * --> POST-- http://localhost:8089/api/account/register
+	 * {
+		  "accountNumber": "1915863237",
+		  "userId": "Nithin21",
+		  "loginPassword": "password123",
+		  "confirmLoginPassword": "password123",
+		  "transactionPassword": "transaction123",
+		  "confirmTransactionPassword": "transaction123"
+		}
+	 */
+	@PostMapping("/register")
+	public Account registerInternetBanking(@RequestBody RegisterRequest request) {
+		logger.info("Registering internet banking for account number: {}", request.getAccountNumber());
+		return accountService.registerInternetBanking(request);
+	}
+
+	/*--> POST--
+	 http://localhost:8089/api/account/login
+			    {
+				  "userId": "Nithin21",
+				  "loginPassword": "password123"
+				}
+	 */
+	@PostMapping("/login")
+	public Account login(@RequestBody LoginRequest loginRequest) {
+		logger.info("Attempting login for user ID: {}", loginRequest.getUserId());
+		return accountService.login(loginRequest);
+	}
+	/* --> GET--
+	 http://localhost:8089/api/account/1915863237
+	 */
+	@GetMapping("/{accountNumber}")
+	public ResponseEntity<AccountDetailsDTO> getAccountDetails(@PathVariable String accountNumber) {
+		AccountDetailsDTO dto = accountService.getAccountDetails(accountNumber);
+
+		if (dto != null) {
+			return ResponseEntity.ok(dto);
+		} else {
+			return ResponseEntity.status(HttpStatus.NOT_FOUND)
+					.body(null);  // Or return a message in case the account is not found
+		}
+	}
+
+	/*
+	 * http://localhost:8085/api/account/1128177898/transactions
+	 */
+	@GetMapping("/{accountNumber}/transactions")
+	public ResponseEntity<List<Transaction>> getTransactionDetails(@PathVariable String accountNumber) {
+		try {
+			List<Transaction> transactions = accountService.getTransactionDetails(accountNumber);
+			return ResponseEntity.ok(transactions);
+		} catch (IllegalArgumentException e) {
+			return ResponseEntity.status(HttpStatus.NOT_FOUND).body(null);
+		}
+	}
+
+	/*
+	 * http://localhost:8085/api/account/1841413158/payee
+	 * {
+			  "payee": {
+			    "name": "Aniket",
+			    "accountNumber": "1559318849",
+			    "confirmAccountNumber": "1559318849",
+			    "nickname": "chhotu"
+			  }
+			}
+
+	 */
+	@PostMapping("/{accountNumber}/payee")
+	public ResponseEntity<Account> addPayee(
+			@PathVariable String accountNumber,
+			@RequestBody Map<String, Object> requestBody) {
+
+		Map<String, String> payeeData = (Map<String, String>) requestBody.get("payee");
+
+		// Extract payee details from the request
+		Payee newPayee = new Payee();
+		newPayee.setBeneficiaryName(payeeData.get("name"));
+		newPayee.setAccountNumber(payeeData.get("accountNumber"));
+		newPayee.setNickname(payeeData.getOrDefault("nickname", ""));
+
+		String confirmAccountNumber = payeeData.get("confirmAccountNumber");
+
+		try {
+			Account updatedAccount = accountService.addPayee(accountNumber, newPayee, confirmAccountNumber);
+			return ResponseEntity.ok(updatedAccount);
+		} catch (IllegalArgumentException e) {
+			return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(null);
+		}
+	}
+
+	/*
+	 * http://localhost:8085/api/account/neft
+	 * {
+			  "fromAccount": "1841413158",
+			  "toAccount": "1559318849",
+			  "amount": 5000.00,
+			  "remark": "NEFT Transfer"
+			}
+	 */
+	@PostMapping("/neft")
+	public ResponseEntity<Account> performNEFTTransaction(
+			@RequestBody Map<String, Object> requestBody) {
+
+		String fromAccountNumber = (String) requestBody.get("fromAccount");
+		String toAccountNumber = (String) requestBody.get("toAccount");
+		double amount = Double.parseDouble(requestBody.get("amount").toString());
+		String remark = (String) requestBody.get("remark");
+
+		try {
+			Account updatedAccount = accountService.performNEFTTransaction(fromAccountNumber, toAccountNumber, amount, remark);
+			return ResponseEntity.ok(updatedAccount);
+		} catch ( ResourceNotFoundException e) {
+			return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(null);
+		}
+	}
+
+	@GetMapping("/{accountNumber}/payees")
+	public ResponseEntity<List<Payee>> getPayees(@PathVariable String accountNumber) {
+		try {
+			List<Payee> payees = accountService.getPayees(accountNumber);
+			return ResponseEntity.ok(payees);
+		} catch (IllegalArgumentException e) {
+			return ResponseEntity.status(HttpStatus.NOT_FOUND).body(null);
+		}
+	}
+
+	@PostMapping("/forgot-password")
+	public ResponseEntity<String> forgotPassword(@RequestBody ForgotPasswordRequest request) {
+		logger.info("Handling forgot password request for user ID: {}", request.getUserId());
+		String otp = accountService.generateOtp(request.getUserId());
+		// In a real application, you would send the OTP via email/SMS
+		return ResponseEntity.ok("OTP sent to registered contact. OTP: " + otp);
+	}
+
+	@PostMapping("/reset-password")
+	public ResponseEntity<String> resetPassword(@RequestBody ResetPasswordRequest request) {
+		logger.info("Handling password reset request for user ID: {}", request.getUserId());
+		accountService.resetPassword(request);
+		return ResponseEntity.ok("Password reset successfully");
+	}
+	
+	/*
+	  http://localhost:8085/api/account/setNewPassword
+	  	{
+		    "userId": "Aniket123",
+		    "oldPassword": "password123",
+		    "newPassword": "newPassword123",
+		    "confirmNewPassword": "newPassword123"
+		}
+	 */
+	@PostMapping("/setNewPassword")
+	public ResponseEntity<String> setNewPassword(@RequestBody Map<String, String> passwordDetails) {
+		String userId = passwordDetails.get("userId");
+		String oldPassword = passwordDetails.get("oldPassword");
+		String newPassword = passwordDetails.get("newPassword");
+		String confirmNewPassword = passwordDetails.get("confirmNewPassword");
+
+		try {
+			Account account = accountService.setNewPassword(userId, oldPassword, newPassword, confirmNewPassword);
+			return ResponseEntity.ok("Password updated successfully.");
+		} catch (IllegalArgumentException e) {
+			return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(e.getMessage());
+		} catch (ResourceNotFoundException e) {
+			return ResponseEntity.status(HttpStatus.NOT_FOUND).body("Account not found.");
+		}
+	}
+}
+
+

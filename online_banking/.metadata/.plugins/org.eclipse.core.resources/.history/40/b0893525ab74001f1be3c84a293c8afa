@@ -1,0 +1,10 @@
+package com.wipro.training.bank.exception;
+/**
+Author : Nithin T
+Date   : 17-Sept-2024
+Time   : 9:40:30 am
+Project: smart-bank
+ */
+public class DuplicateDataException {
+
+}
